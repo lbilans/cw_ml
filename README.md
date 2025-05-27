@@ -1,5 +1,15 @@
-# Ćwiczenie z przedmiotu ZRISKW
+# Ćwiczenia z przedmiotu ZRISKW
+Łukasz Bilański
 
-„Repozytorium do testowania mojej konfiguracji Git/GitHub”.
+## Dobre praktyki
 
-1) Pierwsze starcie z github
+- .gitignore (’\*.rozszerzenie’, ‘folder/’,/.quarto/)
+- nie generuj folderu plików pomocniczych przy renderowaniu quarto
+  (‘self-contained: true’ i ‘embled-resources:true’)
+
+*Rstudio-\> tools-\>git-\>sign(puste) *cashe - przyspiesza renderowanie
+dokumentów \*qmd -\> md (format:gfm)
+
+## commit pull push
+
+## branch
