@@ -16,3 +16,5 @@
 ## commit pull push
 
 ## branch
+
+dodawanie nowych gałęzi w Rstudio
