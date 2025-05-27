@@ -7,8 +7,11 @@
 - nie generuj folderu plików pomocniczych przy renderowaniu quarto
   (‘self-contained: true’ i ‘embled-resources:true’)
 
-*Rstudio-\> tools-\>git-\>sign(puste) *cashe - przyspiesza renderowanie
-dokumentów \*qmd -\> md (format:gfm)
+\*Rstudio-\> tools-\>git-\>sign(puste)
+
+\*cashe - przyspiesza renderowanie dokumentów
+
+\*qmd -\> md (format:gfm)
 
 ## commit pull push
 
