@@ -18,7 +18,6 @@ library(parsnip)
 
 # Helper packages
 library(readr)# import danych
-install.packages("dotwisker") # konwersja
 library(broom.mixed) # konwersja 
 library(dotwhisker)  # wizualizacja
 ```
@@ -26,8 +25,11 @@ library(dotwhisker)  # wizualizacja
 You can add options to executable code like this 
 
 ```{r}
-#| echo: false
-2 * 2
+urchins <-
+  read_csv("https://tidymodels.org/start/models/urchins.csv") %>% 
+  setNames(c("food_regime", "initial_volume", "width")) %>% 
+  mutate(food_regime = factor(food_regime, 
+                              levels = c("Initial", "Low", "High")))
 ```
 
 The `echo: false` option disables the printing of code (only output is displayed).
