@@ -7,6 +7,7 @@ format: html
 ##Potrzebne biblioteki
 
 ```{r}
+#| echo: false
 library(tidymodels)
 library(parsnip)
 
@@ -33,4 +34,107 @@ urchins <-
 ```{r}
 urchins |> is.na() |> as_tibble() |> summarise_all(sum)
 ```
+
+
+```{r}
+urchins %>%
+  ggplot(aes(
+    x = initial_volume,
+    y = width,
+    col = food_regime,
+    group = food_regime
+  )) +
+  geom_point() +
+  geom_smooth(method = lm, se = F) +
+  scale_color_viridis_d(option = "C", end = .9)
+```
+
+
+
+##Dopasowanie modelu
+```{r}
+width ~ initial_volume * food_regime
+```
+
+```{r}
+linear_reg()
+```
+
+```{r}
+lm_mod <- 
+  linear_reg() |> 
+  set_engine("lm")
+```
+
+```{r}
+lm_fit <-  
+  lm_mod |>
+  fit(width ~ initial_volume * food_regime, data = urchins)
+lm_fit  
+```
+
+```{r}
+print(lm_fit, digits = 5)
+```
+
+```{r}
+lm_fit$fit |> summary()
+```
+
+```{r}
+lm_fit |> tidy()
+```
+
+```{r}
+lm_fit |> tidy(conf.int = T)
+```
+
+
+```{r}
+lm_fit |> 
+  tidy() |> 
+  dwplot(vline = geom_vline(xintercept = 0, color = "grey50", linetype = 2), 
+         dot_args = list(size = 2, color = "black"), 
+         whisker_args = list(color = "black")) +
+  theme_bw()
+```
+
+##Prognozowanie
+
+```{r}
+new_points <- expand.grid(initial_volume = seq(5,45,5), 
+                          food_regime = c("Initial", "Low", "High"))
+```
+
+
+```{r}
+# Prognoza średniej wartości
+mean_pred <- predict(object = lm_fit, new_data = new_points)
+
+# Prognoza przedizału ufności
+conf_pred <- predict(object = lm_fit, new_data = new_points, type = "conf_int")
+
+# Łączenie danych
+lm_pred <- 
+  new_points |> 
+  bind_cols(mean_pred) |> 
+  bind_cols(conf_pred)
+
+# WYkres danych
+
+lm_pred |>
+  ggplot(aes(x = food_regime,
+             y = .pred)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = .pred_lower,
+                    ymax = .pred_upper),
+                width = 0.2) +
+  facet_wrap(~ initial_volume) +
+  theme_bw() +
+  labs(y = "urchni size")
+```
+
+
+
+
 
