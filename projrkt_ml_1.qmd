@@ -135,6 +135,67 @@ lm_pred |>
 ```
 
 
+## Inne metody estymacji modelu
+
+```{r}
+prior_dist <- rstanarm::student_t(df = 1)
+
+set.seed(123)
+
+# Ustawiamy metodę estymacji za pomocą parsnip
+
+bayes_mod <-
+  linear_reg() |>
+  set_engine(engine = "stan",
+             prior_intercept = prior_dist,
+             prior = prior_dist)
+
+# Estymacja modelu
+
+bayes_fit <- 
+  bayes_mod |> 
+  fit(width ~ initial_volume * food_regime, data = urchins)
+```
+
+```{r}
+bayes_fit$fit #za mała dokąłdność
+```
+
+```{r}
+bayes_fit |> print(digits = 4)
+```
+
+```{r}
+bayes_fit |> tidy(conf.int = T)
+```
+
+```{r}
+bayes_pred <- 
+new_points |> 
+  bind_cols(predict(bayes_fit, new_data = new_points)) |> 
+  bind_cols(predict(bayes_fit, new_data = new_points, type = "conf_int"))
+```
+
+```{r}
+bayes_pred |>
+  ggplot(aes(x = food_regime,
+             y = .pred)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = .pred_lower,
+                    ymax = .pred_upper),
+                width = 0.2) +
+  facet_wrap(~ initial_volume) +
+  theme_bw() +
+  labs(y = "urchni size")
+```
+
+```{r}
+ggplot(urchins,
+       aes(initial_volume, width)) +      # returns a ggplot object 
+  geom_jitter() +                         # same
+  geom_smooth(method = lm, se = FALSE) +  # same                    
+  labs(x = "Volume", y = "Width")         # etc
+```
 
 
 
