@@ -4,13 +4,7 @@ author: "Łukasz Bilański"
 format: html
 ---
 
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+##Potrzebne biblioteki
 
 ```{r}
 library(tidymodels)
@@ -22,7 +16,8 @@ library(broom.mixed) # konwersja
 library(dotwhisker)  # wizualizacja
 ```
 
-You can add options to executable code like this 
+
+##Dane urchins data
 
 ```{r}
 urchins <-
@@ -32,4 +27,10 @@ urchins <-
                               levels = c("Initial", "Low", "High")))
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+
+##Sprawdzanie braku danych
+
+```{r}
+urchins |> is.na() |> as_tibble() |> summarise_all(sum)
+```
+
