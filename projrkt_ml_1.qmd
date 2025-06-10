@@ -1,7 +1,37 @@
 ---
-title: "projekt_ML_1"
+title: "projekt_ml_1"
 author: "Łukasz Bilański"
-format: html
+format: 
+  html:
+    self-contained: true
+    embed-resources: true
+    toc: true
+    toc-depth: 4
+    toc-location: right
+    toc-title: "Spis treści"
+    number-sections: true
+    number-depth: 4
+    code-fold: show
+    code-summary: "Show the code"
+    code-tools: true
+    code-block-bg: true
+    code-block-border-left: "black"
+    code-line-numbers: false
+    code-copy: true
+    html-math-method: katex
+    smooth-scroll: true
+    anchor-sections: true
+    link-external-icon: true
+    link-external-newwindow: true
+    theme:
+        light: cosmo
+        dark: darkly
+    fontsize: 1.0em
+    linestretch: 1.5
+execute:
+  warning: false
+  echo: true
+  error: false
 ---
 
 ##Potrzebne biblioteki
@@ -10,11 +40,12 @@ format: html
 #| echo: false
 library(tidymodels)
 library(parsnip)
-
+library(dplyr)
 # Helper packages
 library(readr)# import danych
 library(broom.mixed) # konwersja 
 library(dotwhisker)  # wizualizacja
+library(GGally) # wizualizacja
 ```
 
 
@@ -196,6 +227,125 @@ ggplot(urchins,
   geom_smooth(method = lm, se = FALSE) +  # same                    
   labs(x = "Volume", y = "Width")         # etc
 ```
+
+
+## ćwiczenie nr 1
+
+```{r}
+
+colnames(airquality) <- tolower(colnames(airquality))
+
+air <-
+  airquality |>
+  as_tibble() |>
+  na.omit() |> 
+  select(-day) |> 
+  mutate(month = factor(month)) 
+```
+
+```{r}
+ggpairs(air)
+```
+
+
+```{r}
+# Definicja modelu liniowego
+lm_mod <- linear_reg() |>  
+  set_engine("lm")
+
+# Dopasowanie modelu (bez interakcji i bez Day)
+lm_fit <- 
+  lm_mod |> 
+  fit(ozone ~ solar.r + wind + temp + month, 
+      data = air)
+lm_fit
+```
+```{r}
+print(lm_fit, digits = 5)
+```
+```{r}
+lm_fit$fit |> summary()
+```
+
+```{r}
+lm_fit |> tidy()
+```
+
+```{r}
+lm_fit |> tidy(conf.int = T)
+```
+
+```{r}
+lm_fit |> 
+  tidy() |> 
+  dwplot(vline = geom_vline(xintercept = 0, color = "grey50", linetype = 2), 
+         dot_args = list(size = 2, color = "black"), 
+         whisker_args = list(color = "black")) +
+  theme_bw()
+```
+Zmienna wind oraz temp mają znaczący wpływ na zmienną ozone, natomiast solar.r nie ma znaczącego wpływu.
+
+
+```{r}
+# Dodanie danych testowych
+new_dane <- 
+  data.frame(solar.r = seq(100, 300, 50), 
+              wind = seq(0, 20, 5), 
+              temp = seq(60, 100, 10), 
+              month = factor(c("5", "6", "7", "8", "9")))
+```
+
+
+```{r}
+# Prognoza średniej wartości
+mean_pred <- predict(object = lm_fit, new_data = new_dane)
+# Prognoza przedizału ufności
+conf_pred <- predict(object = lm_fit, new_data = new_dane, type = "conf_int")
+# Łączenie danych
+air_lm_pred <- 
+  new_dane |> 
+  bind_cols(mean_pred) |> 
+  bind_cols(conf_pred)
+```
+
+Wykres prognoz dla zmiennej ozone
+```{r}
+air_lm_pred |>
+  ggplot(aes(x = month,
+             y = .pred)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = .pred_lower,
+                    ymax = .pred_upper),
+                width = 0.2) +
+  theme_bw() +
+  labs(y = "ozone")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
