@@ -85,7 +85,7 @@ test_data <- testing(data_split)
 ```{r}
 air_rec <- recipe(ozone ~ ., data = train_data) |> 
   update_role(nox, new_role = "ID") |>
-  step_rm(o3, pm10, pm25, so2, co) |>
+  step_rm(o3) |>
   step_date(date, features = c("dow", "month", "year"), keep_original_cols = FALSE) |>
   step_dummy(all_nominal_predictors()) |>
   step_zv(all_predictors())

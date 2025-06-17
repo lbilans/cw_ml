@@ -124,7 +124,7 @@ test_data <- testing(data_split)
 ```{r}
 air_rec <- recipe(ozone ~ ., data = train_data) |> 
   update_role(nox, new_role = "ID") |>
-  step_rm(o3, pm10, pm25, so2, co) |>
+  step_rm(o3) |>
   step_date(date, features = c("dow", "month", "year"), keep_original_cols = FALSE) |>
   step_dummy(all_nominal_predictors()) |>
   step_zv(all_predictors())
@@ -150,6 +150,30 @@ air_fit <- fit(air_workflow, data = train_data)
 ```
 
 
+
+```{r}
+air_fit |> 
+  extract_fit_parsnip() |> 
+  tidy()
+```
+
+```{r}
+air_fit |> 
+  extract_recipie()
+```
+
+
+```{r}
+predict(air_fit, test_data)
+```
+
+```{r}
+predict(air_fit, test_data, type = "prob") |> 
+  bind_cols(test_data) |> 
+  select(ozone, .pred_Niskie, .pred_Wysokie) |> 
+  slice_head(n = 10)
+```
+
 ```{r}
 test_results <- augment(air_fit, test_data)
 
@@ -164,20 +188,10 @@ test_results |>
 ```
 
 ```{r}
-air_fit |> 
-  extract_fit_parsnip() |> 
-  tidy() |> 
-  arrange(-abs(estimate))
+test_results |> 
+  pr_curve(truth = ozone, .pred_Wysokie) |> 
+  autoplot()
 ```
-
-
-
-
-
-
-
-
-
 
 
 
