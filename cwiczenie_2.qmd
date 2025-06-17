@@ -1,0 +1,190 @@
+---
+title: "Ćwiczenie_2"
+author: "Łukasz Bilański"
+format: 
+  html:
+    self-contained: true
+    embed-resources: true
+    toc: true
+    toc-depth: 4
+    toc-location: right
+    toc-title: "Spis treści"
+    number-sections: true
+    number-depth: 4
+    code-fold: show
+    code-summary: "Show the code"
+    code-tools: true
+    code-block-bg: true
+    code-block-border-left: "black"
+    code-line-numbers: false
+    code-copy: true
+    html-math-method: katex
+    smooth-scroll: true
+    anchor-sections: true
+    link-external-icon: true
+    link-external-newwindow: true
+    theme:
+        light: cosmo
+        dark: darkly
+    fontsize: 1.0em
+    linestretch: 1.5
+execute:
+  warning: false
+  echo: true
+  error: false
+---
+
+##Potrzebne biblioteki
+
+```{r}
+library(lubridate)
+library(tidymodels) 
+library(skimr) 
+library(GGally) 
+library(openair) 
+tidymodels_prefer()
+```
+
+```{r}
+air <- mydata |> selectByDate(year = 2002) 
+air |> skim()
+```
+
+
+```{r}
+air <- air |> na.omit()
+```
+
+```{r}
+set.seed(222)
+air[sample(1:nrow(air), size = 300, replace = F),] |> 
+  select(nox, no2) |> 
+  ggpairs()
+```
+
+
+```{r}
+library(ggpubr)
+# wykres regresji liniowej, do sprawdzenia danych 
+set.seed(222)
+air[sample(1:nrow(air), size = 300, replace = F),] |> 
+  select(nox, no2) |> 
+  ggplot(aes(nox, no2)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = T, formula = y ~ x) + 
+  stat_cor(label.x = 10, label.y = 80) + 
+  stat_regline_equation(label.x = 10, label.y = 82) +
+  theme_bw()
+```
+
+
+```{r}
+air |>    
+  ggplot(aes(date, o3)) +     
+  geom_line() +     
+  theme_bw()
+```
+```{r}
+air |> 
+  pull(o3) |> 
+  range()  
+```
+
+
+```{r}
+air <-
+  air |>
+  mutate(ozone = cut(
+    o3,
+    breaks = c(-0.1, 10, 53),
+    labels = c("Niskie", "Wysokie")
+  ),
+  month = month(date, label = TRUE),
+    hour = hour(date),
+    weekday = wday(date, label = TRUE),
+    wind_direction = case_when(
+      wd >= 315 | wd < 45 ~ "N",
+      wd >= 45 & wd < 135 ~ "E", 
+      wd >= 135 & wd < 225 ~ "S",
+      wd >= 225 & wd < 315 ~ "W",
+      TRUE ~ "Unknown"
+  ))
+```
+
+```{r}
+air |> count(ozone)
+```
+
+```{r}
+data_split <- initial_split(air, prop = 3/4, strata = ozone)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+```{r}
+air_rec <- recipe(ozone ~ ., data = train_data) |> 
+  update_role(nox, new_role = "ID") |>
+  step_rm(o3, pm10, pm25, so2, co) |>
+  step_date(date, features = c("dow", "month", "year"), keep_original_cols = FALSE) |>
+  step_dummy(all_nominal_predictors()) |>
+  step_zv(all_predictors())
+```
+
+
+```{r}
+air_rec |> summary()
+```
+
+```{r}
+lr_mod <- logistic_reg() |> 
+  set_engine("glm")
+
+air_workflow <- workflow() |> 
+  add_model(lr_mod) |> 
+  add_recipe(air_rec)
+
+air_workflow
+```
+```{r}
+air_fit <- fit(air_workflow, data = train_data)
+```
+
+
+```{r}
+test_results <- augment(air_fit, test_data)
+
+conf_mat(test_results, truth = ozone, estimate = .pred_class)
+
+test_results |> 
+  roc_curve(truth = ozone, .pred_Wysokie) |> 
+  autoplot()
+
+test_results |> 
+  roc_auc(truth = ozone, .pred_Wysokie)
+```
+
+```{r}
+air_fit |> 
+  extract_fit_parsnip() |> 
+  tidy() |> 
+  arrange(-abs(estimate))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

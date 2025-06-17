@@ -1,0 +1,276 @@
+---
+title: "Ćwiczenie_3"
+author: "Łukasz Bilański"
+format: 
+  html:
+    self-contained: true
+    embed-resources: true
+    toc: true
+    toc-depth: 4
+    toc-location: right
+    toc-title: "Spis treści"
+    number-sections: true
+    number-depth: 4
+    code-fold: show
+    code-summary: "Show the code"
+    code-tools: true
+    code-block-bg: true
+    code-block-border-left: "black"
+    code-line-numbers: false
+    code-copy: true
+    html-math-method: katex
+    smooth-scroll: true
+    anchor-sections: true
+    link-external-icon: true
+    link-external-newwindow: true
+    theme:
+        light: cosmo
+        dark: darkly
+    fontsize: 1.0em
+    linestretch: 1.5
+execute:
+  warning: false
+  echo: true
+  error: false
+---
+
+```{r}
+library(lubridate)
+library(ggpubr)
+library(tidymodels) 
+library(skimr) 
+library(GGally) 
+library(openair) 
+library(ranger)
+library(modeldata)
+library(tidymodels)
+tidymodels_prefer()
+```
+
+```{r}
+air <- mydata |> selectByDate(year = 2002) 
+air |> skim()
+air <- air |> na.omit()
+```
+
+```{r}
+air <-
+  air |>
+  mutate(ozone = cut(
+    o3,
+    breaks = c(-0.1, 10, 53),
+    labels = c("Niskie", "Wysokie")
+  ),
+    month = month(date, label = TRUE),
+    hour = hour(date),
+    weekday = wday(date, label = TRUE),
+    wind_direction = case_when(
+      wd >= 315 | wd < 45 ~ "N",
+      wd >= 45 & wd < 135 ~ "E", 
+      wd >= 135 & wd < 225 ~ "S",
+      wd >= 225 & wd < 315 ~ "W",
+      TRUE ~ "Unknown"
+  ))
+```
+
+
+```{r}
+set.seed(222)
+data_split <- initial_split(air, prop = 3/4, strata = ozone)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+
+```{r}
+air_rec <- recipe(ozone ~ ., data = train_data) |> 
+  update_role(nox, new_role = "ID") |>
+  step_rm(o3, pm10, pm25, so2, co) |>
+  step_date(date, features = c("dow", "month", "year"), keep_original_cols = FALSE) |>
+  step_dummy(all_nominal_predictors()) |>
+  step_zv(all_predictors())
+```
+
+
+## Regresja logistyczna
+
+```{r}
+lr_mod <- logistic_reg() |> 
+  set_engine("glm")
+
+lr_workflow <- workflow() |> 
+  add_model(lr_mod) |> 
+  add_recipe(air_rec)
+```
+
+
+```{r}
+set.seed(123)
+cv_folds <- vfold_cv(data = train_data, v = 10, strata = ozone)
+
+set.seed(456)
+lr_fit_cv <- 
+  lr_workflow |> 
+  fit_resamples(cv_folds)
+
+lr_cv_metrics <- lr_fit_cv |> collect_metrics()
+
+lr_cv_metrics
+```
+
+
+
+```{r}
+set.seed(123)
+cv5_folds <- vfold_cv(data = train_data, v = 5, strata = ozone)
+
+set.seed(456)
+lr_fit_cv5 <- 
+  lr_workflow |> 
+  fit_resamples(cv5_folds)
+
+lr_cv5_metrics <- lr_fit_cv5 |> collect_metrics()
+
+lr_cv5_metrics
+
+```
+
+
+```{r}
+set.seed(123)
+boot_samples <- bootstraps(data = train_data, times = 25, strata = ozone)
+
+set.seed(456)
+lr_fit_boot <- 
+  lr_workflow |> 
+  fit_resamples(boot_samples)
+
+lr_boot_metrics <- lr_fit_boot |> collect_metrics()
+
+lr_boot_metrics
+```
+
+## Las losowy
+
+```{r}
+rf_mod <- 
+  rand_forest() |> 
+  set_engine("ranger") |> 
+  set_mode("classification")
+
+rf_workflow <- workflow() |> 
+  add_model(rf_mod) |> 
+  add_recipe(air_rec)
+```
+
+```{r}
+set.seed(456)
+rf_fit_cv <- 
+  rf_workflow |> 
+  fit_resamples(cv_folds)
+
+rf_cv_metrics <- rf_fit_cv |> collect_metrics()
+
+rf_cv_metrics
+```
+
+```{r}
+set.seed(456)
+rf_fit_cv5 <- 
+  rf_workflow |> 
+  fit_resamples(cv5_folds)
+
+rf_cv5_metrics <- rf_fit_cv5 |> collect_metrics()
+
+rf_cv5_metrics
+```
+
+```{r}
+set.seed(456)
+rf_fit_boot <- 
+  rf_workflow |> 
+  fit_resamples(boot_samples)
+
+rf_boot_metrics <- rf_fit_boot |> collect_metrics()
+
+rf_boot_metrics
+```
+
+##Porównanie
+
+```{r}
+results_comparison <- bind_rows(
+  lr_cv_metrics |> mutate(model = "Regresja Logistyczna", method = "CV-10"),
+  lr_cv5_metrics |> mutate(model = "Regresja Logistyczna", method = "CV-5"),
+  lr_boot_metrics |> mutate(model = "Regresja Logistyczna", method = "Bootstrap"),
+  rf_cv_metrics |> mutate(model = "Las Losowy", method = "CV-10"),
+  rf_cv5_metrics |> mutate(model = "Las Losowy", method = "CV-5"),
+  rf_boot_metrics |> mutate(model = "Las Losowy", method = "Bootstrap")
+) |>
+  select(model, method, .metric, mean, std_err) |>
+  arrange(model, method, .metric)
+
+results_comparison
+```
+
+
+```{r}
+lr_final_fit <- fit(lr_workflow, data = train_data)
+rf_final_fit <- fit(rf_workflow, data = train_data)
+```
+
+
+```{r}
+lr_test_pred <- augment(lr_final_fit, test_data)
+rf_test_pred <- augment(rf_final_fit, test_data)
+```
+
+
+```{r}
+lr_test_metrics <- bind_rows(
+  lr_test_pred |> roc_auc(truth = ozone, .pred_Wysokie),
+  lr_test_pred |> accuracy(truth = ozone, .pred_class)
+) |> mutate(model = "Regresja Logistyczna")
+
+lr_test_metrics
+```
+
+
+```{r}
+rf_test_metrics <- bind_rows(
+  rf_test_pred |> roc_auc(truth = ozone, .pred_Wysokie),
+  rf_test_pred |> accuracy(truth = ozone, .pred_class)
+) |> mutate(model = "Las Losowy")
+
+rf_test_metrics
+```
+
+
+```{r}
+test_results <- bind_rows(lr_test_metrics, rf_test_metrics) |>
+  select(model, .metric, .estimate)
+
+test_results
+```
+
+Wnioski z analizy wyników:
+- **Regresja Logistyczna**: Model osiągnął dobrą dokładność i AUC, ale jego wyniki są nieco gorsze niż lasu losowego.
+- **Las Losowy**: Model osiągnął lepsze wyniki w zakresie AUC i dokładności, co sugeruje, że jest bardziej skuteczny w klasyfikacji poziomów ozonu.
+
+Różne metody resamplingu (CV-10, CV-5, Bootstrap) dały podobne wyniki dla obu modeli, co sugeruje stabilność wyników.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
