@@ -65,7 +65,6 @@ air[sample(1:nrow(air), size = 300, replace = F),] |>
 
 ```{r}
 library(ggpubr)
-# wykres regresji liniowej, do sprawdzenia danych 
 set.seed(222)
 air[sample(1:nrow(air), size = 300, replace = F),] |> 
   select(nox, no2) |> 
@@ -84,6 +83,7 @@ air |>
   geom_line() +     
   theme_bw()
 ```
+
 ```{r}
 air |> 
   pull(o3) |> 
@@ -97,18 +97,7 @@ air <-
   mutate(ozone = cut(
     o3,
     breaks = c(-0.1, 10, 53),
-    labels = c("Niskie", "Wysokie")
-  ),
-  month = month(date, label = TRUE),
-    hour = hour(date),
-    weekday = wday(date, label = TRUE),
-    wind_direction = case_when(
-      wd >= 315 | wd < 45 ~ "N",
-      wd >= 45 & wd < 135 ~ "E", 
-      wd >= 135 & wd < 225 ~ "S",
-      wd >= 225 & wd < 315 ~ "W",
-      TRUE ~ "Unknown"
-  ))
+    labels = c("Niskie", "Wysokie")))
 ```
 
 ```{r}
@@ -122,12 +111,15 @@ test_data <- testing(data_split)
 ```
 
 ```{r}
-air_rec <- recipe(ozone ~ ., data = train_data) |> 
-  update_role(nox, new_role = "ID") |>
-  step_rm(o3) |>
-  step_date(date, features = c("dow", "month", "year"), keep_original_cols = FALSE) |>
-  step_dummy(all_nominal_predictors()) |>
-  step_zv(all_predictors())
+alt_rec <- 
+    recipe(ozone ~ ., data = train_sir) |>  
+    update_role(os, wd, date, pm16, pm25, so2, co, no2, new_role = "ID") |>  
+    step_BoxCox(ws, nox, no2) |>
+    step_date(date, features = c("month")) |>  
+    step_time(date, features = c("hour")) |>  
+    step_mutate(date_hour = as.factor(date_hour)) |>  
+    step_dummy(all_nominal_predictors()) |>  
+    step_rm(all_outcomes())
 ```
 
 
