@@ -92,12 +92,12 @@ air |>
 
 
 ```{r}
-air <-
-  air |>
-  mutate(ozone = cut(
-    o3,
-    breaks = c(-0.1, 10, 53),
-    labels = c("Niskie", "Wysokie")))
+air <- mydata |> 
+  selectByDate(year = 2002) |> 
+  na.omit() |>
+  mutate(
+    ozone = cut(o3, breaks = c(-0.1, 10, 53), labels = c("Niskie", "Wysokie"))
+  )
 ```
 
 ```{r}
@@ -111,15 +111,19 @@ test_data <- testing(data_split)
 ```
 
 ```{r}
-alt_rec <- 
-    recipe(ozone ~ ., data = train_sir) |>  
-    update_role(os, wd, date, pm16, pm25, so2, co, no2, new_role = "ID") |>  
-    step_BoxCox(ws, nox, no2) |>
+air_rec <- 
+    recipe(ozone ~ ., data = train_data) |>  
+    update_role(o3, wd, date, pm10, pm25, so2, co, no2, new_role = "ID") |>  
+    step_BoxCox(ws, nox) |>  
     step_date(date, features = c("month")) |>  
     step_time(date, features = c("hour")) |>  
     step_mutate(date_hour = as.factor(date_hour)) |>  
-    step_dummy(all_nominal_predictors()) |>  
-    step_rm(all_outcomes())
+    step_dummy(all_nominal_predictors())
+
+air_rec |> prep() |> 
+  bake(train_data)
+
+
 ```
 
 
@@ -151,7 +155,7 @@ air_fit |>
 
 ```{r}
 air_fit |> 
-  extract_recipie()
+  extract_recipe()
 ```
 
 
