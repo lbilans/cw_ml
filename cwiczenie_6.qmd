@@ -1,0 +1,441 @@
+---
+title: "Ćwiczenie_5"
+author: "Łukasz Bilański"
+format: 
+  html:
+    self-contained: true
+    embed-resources: true
+    toc: true
+    toc-depth: 4
+    toc-location: right
+    toc-title: "Spis treści"
+    number-sections: true
+    number-depth: 4
+    code-fold: show
+    code-summary: "Show the code"
+    code-tools: true
+    code-block-bg: true
+    code-block-border-left: "black"
+    code-line-numbers: false
+    code-copy: true
+    html-math-method: katex
+    smooth-scroll: true
+    anchor-sections: true
+    link-external-icon: true
+    link-external-newwindow: true
+    theme:
+        light: cosmo
+        dark: darkly
+    fontsize: 1.0em
+    linestretch: 1.5
+execute:
+  warning: false
+  echo: true
+  error: false
+---
+
+## Załadowanie bibliotek i danych
+
+```{r}
+pkg = c(
+  "tidymodels",
+  "glmnet",
+  "ranger",
+  "rpart",
+  "readr",
+  "tidymodels",
+  "vip",
+  "ggthemes",
+  "openair",
+  "gt"
+)
+
+pkg |> 
+  purrr::map(.f = ~ require(.x, character.only = T)) ; rm(pkg)
+
+tidymodels_prefer()
+```
+```{r}
+data <- importAURN(site = "kc1", year = 2021)
+```
+
+
+## Eksploracja i przygotowanie danych
+
+```{r}
+wd_factor <- function(degrees) {
+  if (!is.numeric(degrees)) stop("Dane wejściowe muszą być numeryczne")
+  
+  degrees <- degrees %% 360
+  directions <- c("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
+  
+  breaks <- seq(0, 360, by = 22.5)
+  index <- findInterval(degrees, breaks, all.inside = TRUE)
+  factor(directions[index], levels = directions)
+}
+```
+
+## Usunięcie braków danych i niepotrzebnych kolumn
+
+```{r}
+data_clean <- data |> 
+  select(o3, nox, no2, no, ws, wd, air_temp) |> 
+  na.omit() |> 
+  mutate(wind_direction = wd_factor(wd)) |>  
+  select(-no2, -no, -wd)
+```
+
+## Podsumowanie danych
+
+```{r}
+cat("data summary:\n")
+data_clean |> skimr::skim()
+```
+
+## Macierz korelacji
+
+```{r}
+data_clean |> 
+  select(-wind_direction) |> 
+  GGally::ggpairs() +
+  theme_minimal() +
+  labs(title = "Macierz korelacji zmiennych numerycznych")
+```
+
+# Podział danych na zbiór treningowy i testowy
+
+```{r}
+set.seed(123)
+data_split <- initial_split(data_clean, prop = 0.8, strata = o3)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+
+cat("\ndata split:\n")
+cat("Training set:", nrow(train_data), "observations\n")
+cat("Test set:", nrow(test_data), "observations\n")
+```
+
+# Tworzenie przepisów
+
+```{r}
+base_recipe <- recipe(o3 ~ ., data = train_data) |>
+  step_normalize(all_numeric_predictors()) |>
+  step_dummy(all_nominal_predictors())
+
+glmnet_recipe <- base_recipe |>
+  step_zv(all_predictors()) |>  
+  step_corr(all_numeric_predictors(), threshold = 0.9)
+
+rpart_recipe <- recipe(o3 ~ ., data = train_data)
+
+ranger_recipe <- recipe(o3 ~ ., data = train_data) |>
+  step_dummy(all_nominal_predictors())
+```
+
+# SPECYFIKACJA MODELI
+```{r}
+glmnet_spec <- linear_reg(penalty = tune(), mixture = tune()) |>
+  set_engine("glmnet") |>
+  set_mode("regression")
+
+rpart_spec <- decision_tree(
+  cost_complexity = tune(),
+  tree_depth = tune(),
+  min_n = tune()
+) |>
+  set_engine("rpart") |>
+  set_mode("regression")
+
+ranger_spec <- rand_forest(
+  mtry = tune(),
+  trees = tune(),
+  min_n = tune()
+) |>
+  set_engine("ranger", importance = "impurity") |>
+  set_mode("regression")
+
+```
+
+# Tworzenie workflowów
+
+```{r}
+
+glmnet_wf <- workflow() |>
+  add_recipe(glmnet_recipe) |>
+  add_model(glmnet_spec)
+
+rpart_wf <- workflow() |>
+  add_recipe(rpart_recipe) |>
+  add_model(rpart_spec)
+
+ranger_wf <- workflow() |>
+  add_recipe(ranger_recipe) |>
+  add_model(ranger_spec)
+```
+
+# Tuning hiperparametrów
+
+```{r}
+set.seed(456)
+folds <- vfold_cv(train_data, v = 5, strata = o3)
+
+glmnet_grid <- grid_regular(
+  penalty(range = c(-3, 0)),
+  mixture(range = c(0, 1)),
+  levels = 5
+)
+
+rpart_grid <- grid_regular(
+  cost_complexity(range = c(-4, -1)),
+  tree_depth(range = c(3, 10)),
+  min_n(range = c(5, 30)),
+  levels = 4
+)
+
+ranger_grid <- grid_regular(
+  mtry(range = c(2, 5)),
+  trees(range = c(100, 500)),
+  min_n(range = c(5, 20)),
+  levels = 3
+)
+```
+
+# Strojenie modeli
+
+```{r}
+
+cat("\nTuning glmnet model...\n")
+glmnet_tune <- tune_grid(
+  glmnet_wf,
+  resamples = folds,
+  grid = glmnet_grid,
+  metrics = metric_set(rmse, rsq, mae)
+)
+
+cat("Tuning rpart model...\n")
+rpart_tune <- tune_grid(
+  rpart_wf,
+  resamples = folds,
+  grid = rpart_grid,
+  metrics = metric_set(rmse, rsq, mae)
+)
+
+cat("Tuning ranger model...\n")
+ranger_tune <- tune_grid(
+  ranger_wf,
+  resamples = folds,
+  grid = ranger_grid,
+  metrics = metric_set(rmse, rsq, mae)
+)
+
+```
+#  Wybiór najlepszych hiperparametrów i finalizacja workflowów
+```{r}
+
+glmnet_best <- select_best(glmnet_tune,metric =  "rmse")
+rpart_best <- select_best(rpart_tune, metric = "rmse")
+ranger_best <- select_best(ranger_tune,metric =  "rmse")
+
+final_glmnet_wf <- finalize_workflow(glmnet_wf, glmnet_best)
+final_rpart_wf <- finalize_workflow(rpart_wf, rpart_best)
+final_ranger_wf <- finalize_workflow(ranger_wf, ranger_best)
+```
+
+# Dopasowanie finalnych modeli na pełnym zbiorze treningowym
+```{r}
+
+cat("\nFitting final models...\n")
+final_glmnet_fit <- fit(final_glmnet_wf, train_data)
+final_rpart_fit <- fit(final_rpart_wf, train_data)
+final_ranger_fit <- fit(final_ranger_wf, train_data)
+
+```
+# EWALUACJA MODELI NA ZBIORZE TESTOWYM I PORÓWNANIE
+
+```{r}
+glmnet_pred <- predict(final_glmnet_fit, test_data) |>
+  bind_cols(test_data) |>
+  mutate(model = "GLMnet")
+
+rpart_pred <- predict(final_rpart_fit, test_data) |>
+  bind_cols(test_data) |>
+  mutate(model = "Decision Tree")
+
+ranger_pred <- predict(final_ranger_fit, test_data) |>
+  bind_cols(test_data) |>
+  mutate(model = "Random Forest")
+
+all_predictions <- bind_rows(glmnet_pred, rpart_pred, ranger_pred)
+
+model_metrics <- all_predictions |>
+  group_by(model) |>
+  metrics(truth = o3, estimate = .pred) |>
+  select(model, .metric, .estimate) |>
+  pivot_wider(names_from = .metric, values_from = .estimate)
+
+cat("\n=== MODEL COMPARISON ===\n")
+print(model_metrics)
+
+best_model <- model_metrics |>
+  arrange(rmse) |>
+  slice(1) |>
+  pull(model)
+
+cat("\nBest model based on RMSE:", best_model, "\n")
+
+```
+# Wiziualizacja wyników
+```{r}
+
+scatter_plot <- all_predictions |>
+  ggplot(aes(x = o3, y = .pred)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_abline(intercept = 0, slope = 1, color = "red", linewidth = 1, linetype = "dashed") +
+  facet_wrap(~model, scales = "free") +
+  labs(
+    title = "Model Performance: Predicted vs Actual O3 Concentrations",
+    subtitle = "Red dashed line represents perfect prediction",
+    x = "Actual O3 (μg/m³)",
+    y = "Predicted O3 (μg/m³)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    strip.text = element_text(size = 12, face = "bold")
+  )
+
+print(scatter_plot)
+
+residual_plot <- all_predictions |>
+  mutate(residuals = o3 - .pred) |>
+  ggplot(aes(x = .pred, y = residuals)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~model, scales = "free") +
+  labs(
+    title = "Residual Analysis",
+    x = "Predicted O3 (μg/m³)",
+    y = "Residuals (Actual - Predicted)"
+  ) +
+  theme_minimal()
+
+print(residual_plot)
+
+
+scatter_plot <- all_predictions |>
+  ggplot(aes(x = o3, y = .pred)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_abline(intercept = 0, slope = 1, color = "red", linewidth = 1, linetype = "dashed") +
+  facet_wrap(~model, scales = "free") +
+  labs(
+    title = "Model Performance: Predicted vs Actual O3 Concentrations",
+    subtitle = "Red dashed line represents perfect prediction",
+    x = "Actual O3 (μg/m³)",
+    y = "Predicted O3 (μg/m³)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    strip.text = element_text(size = 12, face = "bold")
+  )
+
+print(scatter_plot)
+
+
+residual_plot <- all_predictions |>
+  mutate(residuals = o3 - .pred) |>
+  ggplot(aes(x = .pred, y = residuals)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~model, scales = "free") +
+  labs(
+    title = "Residual Analysis",
+    x = "Predicted O3 (μg/m³)",
+    y = "Residuals (Actual - Predicted)"
+  ) +
+  theme_minimal()
+
+print(residual_plot)
+```
+
+
+# Interpretacja wyników i rekomendacje
+```{r}
+
+if (best_model == "Random Forest") {
+  cat("\nVariable Importance (Random Forest):\n")
+  ranger_vip <- final_ranger_fit |>
+    extract_fit_parsnip() |>
+    vip(num_features = 10)
+  print(ranger_vip)
+}
+
+if (best_model == "Decision Tree") {
+  cat("\nVariable Importance (Decision Tree):\n")
+  rpart_vip <- final_rpart_fit |>
+    extract_fit_parsnip() |>
+    vip(num_features = 10)
+  print(rpart_vip)
+}
+```
+
+
+# Podsumowanie wyników i rekomendacje
+
+```{r}
+
+cat("\n=== DETAILED PERFORMANCE SUMMARY ===\n")
+
+performance_table <- model_metrics |>
+  gt() |>
+  tab_header(
+    title = "O3 Prediction Model Performance",
+    subtitle = "Comparison of three modeling approaches"
+  ) |>
+  fmt_number(
+    columns = c(rmse, rsq, mae),
+    decimals = 3
+  ) |>
+  tab_style(
+    style = list(
+      cell_fill(color = "lightblue"),
+      cell_text(weight = "bold")
+    ),
+    locations = cells_body(
+      rows = rmse == min(model_metrics$rmse)
+    )
+  ) |>
+  cols_label(
+    model = "Model",
+    mae = "MAE",
+    rmse = "RMSE",
+    rsq = "R²"
+  )
+
+print(performance_table)
+
+cv_results <- bind_rows(
+  collect_metrics(glmnet_tune) |> mutate(model = "GLMnet"),
+  collect_metrics(rpart_tune) |> mutate(model = "Decision Tree"),
+  collect_metrics(ranger_tune) |> mutate(model = "Random Forest")
+) |>
+  filter(.metric == "rmse") |>
+  group_by(model) |>
+  slice_min(mean, n = 1)
+
+cat("\nBest Cross-Validation RMSE by Model:\n")
+print(cv_results |> select(model, mean, std_err))
+
+cat("\n=== RECOMMENDATIONS ===\n")
+cat("1. Best performing model:", best_model, "\n")
+cat("2. The scatter plot shows how well each model predicts O3 concentrations\n")
+cat("3. Points closer to the red diagonal line indicate better predictions\n")
+cat("4. Consider ensemble methods for potentially better performance\n")
+cat("5. Monitor model performance over time as air quality conditions change\n")
+```
+
+
+
+
+
