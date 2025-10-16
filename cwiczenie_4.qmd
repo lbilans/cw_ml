@@ -1,0 +1,221 @@
+---
+title: "Ćwiczenie_5"
+author: "Łukasz Bilański"
+format: 
+  html:
+    self-contained: true
+    embed-resources: true
+    toc: true
+    toc-depth: 4
+    toc-location: right
+    toc-title: "Spis treści"
+    number-sections: true
+    number-depth: 4
+    code-fold: show
+    code-summary: "Show the code"
+    code-tools: true
+    code-block-bg: true
+    code-block-border-left: "black"
+    code-line-numbers: false
+    code-copy: true
+    html-math-method: katex
+    smooth-scroll: true
+    anchor-sections: true
+    link-external-icon: true
+    link-external-newwindow: true
+    theme:
+        light: cosmo
+        dark: darkly
+    fontsize: 1.0em
+    linestretch: 1.5
+execute:
+  warning: false
+  echo: true
+  error: false
+---
+
+## Załadowanie bibliotek
+
+```{r}
+library(lubridate)
+library(ggpubr)
+library(skimr) 
+library(GGally) 
+library(openair) 
+library(ranger)
+library(modeldata)
+library(tidymodels)
+library(rpart.plot)
+tidymodels_prefer()
+library(vip)    
+```
+
+## Wczytanie danych
+
+```{r}
+air <- mydata |> selectByDate(year = 2002) 
+air <- air |> na.omit()
+
+air <-
+  air |>
+  mutate(ozone = cut(
+    o3,
+    breaks = c(-0.1, 10, 53),
+    labels = c("Niskie", "Wysokie")))
+```
+
+## Podział na zbiór treningowy i testowy
+
+```{r}
+set.seed(123)
+split <- initial_split(data = air |> select(-c(o3, wd, date, pm10, pm25, so2, co, no2)), 
+                       prop = 3/4, 
+                       strata = ozone)
+
+train <- training(split)
+test <- testing(split)
+```
+
+## Optymalizacja hiper-parametrów
+
+```{r}
+tune_spec <- 
+  rand_forest(
+    mtry = tune(),
+    trees = tune()
+  ) |> 
+  set_engine("ranger", importance = "impurity") |> 
+  set_mode("classification")
+
+tune_spec
+```
+
+
+
+```{r}
+siatka <- grid_regular(mtry(range = c(1, 10)), 
+                       trees(range = c(100, 1000)), 
+                       levels = 5)
+siatka
+```
+
+```{r}
+siatka |> 
+  count(mtry)
+
+siatka |> 
+  count(trees)
+```
+
+
+```{r}
+set.seed(234)
+folds <- vfold_cv(train)
+```
+
+```{r}
+set.seed(345)
+
+work <- 
+  workflow() |> 
+  add_model(tune_spec) |> 
+  add_formula(ozone ~ .)
+
+miary_oceny <-
+  yardstick::metric_set(
+    accuracy,
+    mcc,
+    npv,
+    roc_auc)
+
+fit_rf <-
+  work |>
+  tune_grid(
+    resamples = folds,
+    grid = siatka,
+    metrics = miary_oceny
+  )
+
+fit_rf
+```
+
+```{r}
+fit_rf |> collect_metrics()
+```
+
+```{r}
+fit_rf %>%
+  collect_metrics() %>%
+  mutate(trees = factor(trees)) %>%
+  ggplot(aes(mtry, mean, color = trees)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) +
+  scale_color_viridis_d(option = "plasma", begin = .9, end = 0)
+```
+
+```{r}
+fit_rf |> show_best(metric = "accuracy")
+
+fit_rf |> select_best(metric = "accuracy")
+```
+
+## Ostateczny model
+
+```{r}
+best_mod <- fit_rf |> select_best(metric = "accuracy")
+
+final_mod <-  
+  work |> 
+  finalize_workflow(best_mod)
+```
+
+```{r}
+final_fit <- 
+  final_mod |> 
+  last_fit(split = split)
+
+final_fit %>%
+  collect_metrics()
+```
+
+```{r}
+final_fit |> 
+  collect_predictions() |> 
+  roc_curve(truth = ozone, .pred_Wysokie) |> 
+  autoplot()
+```
+
+```{r}
+final_fit |> extract_workflow()
+```
+
+```{r}
+final_fit |> 
+  extract_workflow() |> 
+  extract_fit_parsnip() |>
+  vip() 
+```
+
+```{r}
+final_fit |>
+  extract_workflow() |>
+  extract_fit_parsnip() |>
+  vip() |> 
+  _$data |> 
+  knitr::kable(digits = 1)
+
+final_fit %>% collect_metrics()
+```
+
+```{r}
+args(rand_forest)
+
+?rand_forest()
+```
+```{r}
+final_fit |> collect_predictions() |> 
+  select(ozone, .pred_class, .pred_Niskie, .pred_Wysokie) |>
+  head(10)
+```
+
